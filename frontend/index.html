@@ -223,6 +223,36 @@
 
         const CHAT_STORAGE_KEY = 'pathfinder_chat_history';
 
+        // The same career can appear as multiple separate card elements (e.g. shown
+        // again later in chat, or also on the Paths page). This keeps every rendered
+        // instance of a given saved-career id in sync when any one of them is unsaved.
+        const careerCardRegistry = {};
+
+        function registerCareerCardInstance(careerId, onUnsaved) {
+            if (!careerId) return;
+            if (!careerCardRegistry[careerId]) careerCardRegistry[careerId] = [];
+            careerCardRegistry[careerId].push(onUnsaved);
+        }
+
+        function notifyCareerCardUnsaved(careerId) {
+            (careerCardRegistry[careerId] || []).forEach(onUnsaved => onUnsaved());
+            delete careerCardRegistry[careerId];
+        }
+
+        // The AI is asked for lists of plain strings, but occasionally returns objects
+        // instead - this turns either shape into readable text instead of "[object Object]"
+        function formatListField(items) {
+            if (!Array.isArray(items)) return items || '';
+            return items.map(item => {
+                if (typeof item === 'string') return item;
+                if (item && typeof item === 'object') {
+                    const stringValues = Object.values(item).filter(v => typeof v === 'string');
+                    return stringValues.join(' - ') || JSON.stringify(item);
+                }
+                return String(item);
+            }).join(', ');
+        }
+
         // This array matches the strict formatting your friend's backend sends right to Groq
         let messageHistory = [
             {
@@ -544,6 +574,10 @@
             }
             updateStarVisual();
 
+            // Other cards showing this same career (e.g. the same suggestion shown
+            // earlier in chat) need to hear about it if THIS card unsaves it
+            if (savedId) registerCareerCardInstance(savedId, () => { savedId = null; updateStarVisual(); });
+
             starBtn.addEventListener('click', async function () {
                 if (savedId) {
                     const removedId = savedId;
@@ -551,6 +585,7 @@
                     if (ok) {
                         savedId = null;
                         updateStarVisual();
+                        notifyCareerCardUnsaved(removedId);
                         if (removeOnUnsave) {
                             card.remove();
                             if (typeof onCardRemoved === 'function') onCardRemoved();
@@ -561,6 +596,7 @@
                     if (newId) {
                         savedId = newId;
                         updateStarVisual();
+                        registerCareerCardInstance(newId, () => { savedId = null; updateStarVisual(); });
                     }
                 }
             });
@@ -571,7 +607,7 @@
                 detailsBtn.textContent = 'View full details';
 
                 const detailsBox = document.createElement('div');
-                detailsBox.className = 'career-details-box';
+                detailsBox.className = 'career-card-match-box career-details-box';
                 detailsBox.style.display = 'none';
 
                 detailsBtn.addEventListener('click', async function () {
@@ -605,9 +641,9 @@
                                 </div>
                             `;
                             detailsBox.querySelector('.career-detail-education').textContent = details.education_needed || '';
-                            detailsBox.querySelector('.career-detail-skills').textContent = (details.skills_to_gain || []).join(', ');
-                            detailsBox.querySelector('.career-detail-programs').textContent = (details.university_programs || []).join(', ');
-                            detailsBox.querySelector('.career-detail-extracurriculars').textContent = (details.extracurriculars || []).join(', ');
+                            detailsBox.querySelector('.career-detail-skills').textContent = formatListField(details.skills_to_gain);
+                            detailsBox.querySelector('.career-detail-programs').textContent = formatListField(details.university_programs);
+                            detailsBox.querySelector('.career-detail-extracurriculars').textContent = formatListField(details.extracurriculars);
                             detailsBox.dataset.loaded = 'true';
                         } else {
                             detailsBox.textContent = 'Could not load details right now, please try again.';
@@ -740,9 +776,9 @@
                 const progress = data.progress;
 
                 document.getElementById('progressFeeling').textContent = progress.feeling || '';
-                document.getElementById('progressValues').textContent = (progress.values || []).join(', ');
-                document.getElementById('progressPatterns').textContent = (progress.patterns || []).join(', ');
-                document.getElementById('progressCareerPaths').textContent = (progress.career_paths_explored || []).join(', ');
+                document.getElementById('progressValues').textContent = formatListField(progress.values);
+                document.getElementById('progressPatterns').textContent = formatListField(progress.patterns);
+                document.getElementById('progressCareerPaths').textContent = formatListField(progress.career_paths_explored);
                 document.getElementById('progressNextStep').textContent = progress.next_step || '';
 
                 emptyState.style.display = 'none';

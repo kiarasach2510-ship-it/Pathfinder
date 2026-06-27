@@ -137,9 +137,17 @@ def save_career():
         return jsonify({"error": "Invalid or missing token"}), 401
 
     data = request.json
+    title = data.get("title")
+
+    # Avoid duplicate rows when the same career appears more than once in a
+    # conversation (e.g. the AI re-suggests it) and gets starred from each instance
+    existing = SavedCareer.query.filter_by(user_id=decoded_token["uid"], title=title).first()
+    if existing:
+        return jsonify({"message": "Career already saved!", "id": existing.id})
+
     new_career = SavedCareer(
         user_id=decoded_token["uid"],
-        title=data.get("title"),
+        title=title,
         description=data.get("description"),
         why_it_matches_you=data.get("why_it_matches_you"),
         environment=data.get("environment"),
@@ -192,9 +200,9 @@ def get_saved_careers():
 CAREER_DETAILS_PROMPT = """You are a supportive career advisor giving a student deeper detail about one specific career they're interested in.
 Always respond using this exact JSON structure:
 education_needed: a short explanation of the typical education path (e.g. degree type, certifications)
-skills_to_gain: a list of specific skills worth developing
-university_programs: a list of specific degree/program names that lead well into this career
-extracurriculars: a list of specific clubs, projects, or activities a high schooler could pursue now to prepare for this career"""
+skills_to_gain: a list of short plain text strings, one per skill worth developing - never objects, just strings
+university_programs: a list of short plain text strings, one per specific degree/program name that leads well into this career - never objects, just strings
+extracurriculars: a list of short plain text strings, one per specific club, project, or activity a high schooler could pursue now to prepare for this career - never objects, just strings"""
 
 @app.route("/career-details", methods=["POST"])
 def career_details():
