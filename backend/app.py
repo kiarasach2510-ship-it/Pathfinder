@@ -3,6 +3,7 @@
 #This imports the tools
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import groq
 from groq import Groq
 from dotenv import load_dotenv
 import os
@@ -27,6 +28,9 @@ def verify_token():
 SYSTEM_PROMPT = """- Ask one simple follow-up question at a time to keep the conversation going, instead of asking many questions in a row.
 - Avoid sounding robotic, generic, or like a search engine. Sound like a real person who genuinely cares.
 - Never make the student feel behind, wrong, or like they should already know the answer.
+- Before asking your next question, always react first to what the student just said - reflect it back briefly, show genuine curiosity, relate to it, or comment on it like a friend would. Never jump straight from their answer into your next question with no acknowledgment - that's what makes it feel like a survey instead of a conversation.
+- Vary how you transition into questions. Don't always end every message with a question mark right after a single acknowledging sentence - sometimes share a brief thought or observation that naturally leads into what you're curious about next.
+- Keep replies to about 2-4 sentences. Long enough to react genuinely and not feel curt, but short enough to stay easy to read and not overwhelm the student.
 
 How to figure out the student's interests:
 - Never ask big, vague questions like 'What are your interests?' or 'What do you want to do with your life?' - these are overwhelming and hard to answer.
@@ -57,7 +61,7 @@ careers: a list of one or more career forms, where each one has:
   - why_it_matches_you
   - environment
   - salary_range
-  - try_it_out """
+  - try_it_out: a specific, concrete, actionable way to actually try out or explore this career right now - e.g. a particular free online course, a specific project to build, a club/competition to join, a tool to experiment with, or someone to shadow for a day. Never a vague encouragement like "explore this further" or "this might be right for you" - always name an actual concrete action. """
 
 
 #This loads the environment variables
@@ -90,27 +94,35 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 @app.route("/career-advice", methods=["POST"])
 def career_advice():
-    #This verifies the Firebase token
+    #This checks for a Firebase token, but doesn't require one (first 10 messages are free for guests)
     decoded_token = verify_token()
-    if decoded_token is None:
-        return jsonify({"error": "Invalid or missing token"}), 401
     data = request.json
     messages = data.get("messages", [])
 
     #This generates the AI response
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages = full_messages,
-        response_format = {"type": "json_object"}
-    )
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages = full_messages,
+            response_format = {"type": "json_object"}
+        )
+    except groq.APIError:
+        return jsonify({"error": "The AI is temporarily busy, please try again shortly."}), 503
+
     try:
         advice = response.choices[0].message.content
     except Exception:
         advice = str(response)
     
-    parsed_advice = json.loads(advice)
-    ready_to_suggest = parsed_advice["type"] == "suggestion"
+    try:
+        parsed_advice = json.loads(advice)
+        if "type" not in parsed_advice or ("content" not in parsed_advice and "careers" not in parsed_advice):
+            raise ValueError("AI response is missing required fields")
+    except (json.JSONDecodeError, ValueError):
+        return jsonify({"error": "The AI's response got garbled, please try sending that again."}), 502
+
+    ready_to_suggest = parsed_advice.get("type") == "suggestion"
     latest_reply = parsed_advice
 
     messages.append({"role": "assistant", "content": advice})
@@ -136,7 +148,22 @@ def save_career():
     )
     db.session.add(new_career)
     db.session.commit()
-    return jsonify({"message": "Career saved!"})
+    return jsonify({"message": "Career saved!", "id": new_career.id})
+
+#This is the star button's backend for un-saving a career (clicking an already-saved star)
+@app.route("/save-career/<int:career_id>", methods=["DELETE"])
+def delete_saved_career(career_id):
+    decoded_token = verify_token()
+    if decoded_token is None:
+        return jsonify({"error": "Invalid or missing token"}), 401
+
+    career = SavedCareer.query.filter_by(id=career_id, user_id=decoded_token["uid"]).first()
+    if career is None:
+        return jsonify({"error": "Saved career not found"}), 404
+
+    db.session.delete(career)
+    db.session.commit()
+    return jsonify({"message": "Career removed!"})
 
 #This lists all saved career suggestions for the logged-in user
 @app.route("/saved-careers", methods=["GET"])
@@ -179,15 +206,23 @@ def career_details():
     title = data.get("title", "")
     description = data.get("description", "")
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": CAREER_DETAILS_PROMPT},
-            {"role": "user", "content": f"The career is: {title}. Description: {description}"}
-        ],
-        response_format={"type": "json_object"}
-    )
-    details = json.loads(response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": CAREER_DETAILS_PROMPT},
+                {"role": "user", "content": f"The career is: {title}. Description: {description}"}
+            ],
+            response_format={"type": "json_object"}
+        )
+    except groq.APIError:
+        return jsonify({"error": "The AI is temporarily busy, please try again shortly."}), 503
+
+    try:
+        details = json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        return jsonify({"error": "The AI's response got garbled, please try again."}), 502
+
     return jsonify({"details": details})
 
 #This is for the Progress page and designing the AI analysis
@@ -210,12 +245,20 @@ def progress():
     messages = data.get("messages", [])
 
     analysis_messages = [{"role": "system", "content": PROGRESS_PROMPT}] + messages
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=analysis_messages,
-        response_format={"type": "json_object"}
-    )
-    progress_data = json.loads(response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=analysis_messages,
+            response_format={"type": "json_object"}
+        )
+    except groq.APIError:
+        return jsonify({"error": "The AI is temporarily busy, please try again shortly."}), 503
+
+    try:
+        progress_data = json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        return jsonify({"error": "The AI's response got garbled, please try again."}), 502
+
     return jsonify({"progress": progress_data})
 
 if __name__ == "__main__":

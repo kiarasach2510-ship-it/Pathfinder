@@ -3,25 +3,863 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pathfinder</title>
+    <title>Pathfinder - Find Your Direction</title>
     <link rel="stylesheet" href="style.css">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 </head>
 <body>
-    <h1>Pathfinder</h1>
-    <p>Discover careers made for you.</p>
 
-    <div class="form-container">
-        <label>What are your interests?</label>
-        <input type="text" id="interests" placeholder="e.g. art, technology, helping people">
+    <header class="navbar">
+        <div class="logo" onclick="showLandingPage()">
+            <svg class="logo-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+            </svg>
+            Pathfinder
+        </div>
+        <nav class="nav-links" id="mainNav" style="display: none;">
+            <button class="nav-btn active" onclick="switchView('talk-view', this)">Talk</button>
+            <button class="nav-btn" onclick="openPathsView(this)">Paths</button>
+            <button class="nav-btn" onclick="openProgressView(this)">My Progress</button>
+            <button class="nav-btn" onclick="switchView('about-view', this)">About</button>
+        </nav>
+        <div class="auth-group" id="authGroup" style="display: none;">
+            <button class="nav-profile-btn" onclick="openProfileOrSignIn(this)">
+                <span class="avatar-dot"></span>
+                <span id="navUserName">Guest</span>
+            </button>
+            <button class="sign-out-btn" onclick="signOut()">Sign out</button>
+        </div>
+    </header>
 
-        <label>What are your goals?</label>
-        <input type="text" id="goals" placeholder="e.g. make a good income, work remotely">
+    <main class="app-container">
 
-        <button onclick="getAdvice()">Find My Path</button>
+        <section id="landing-view" class="app-view active-view">
+            <div class="landing-hero">
+                <div class="badge-accent">A safe space to figure things out</div>
+                <h1 class="hero-title">It's okay to not know <br>what comes next.</h1>
+                <p class="hero-subtitle">
+                    The pressure to have your entire life figured out is overwhelming. Take a breath. 
+                    Pathfinder is here to listen, not to lecture. Let's find your direction, together.
+                </p>
+                <button class="cta-start-btn" onclick="startJourney()">Start your journey</button>
+                <span class="cta-subtext">No pressure. Just start talking.</span>
+            </div>
+        </section>
+
+        <section id="talk-view" class="app-view">
+            <div class="chat-layout">
+                <div class="chat-banner">
+                    It's okay if things feel unclear right now — that's exactly why you're here.
+                </div>
+
+                <div class="chat-feed" id="chatWindow">
+                    <div class="chat-bubble assistant-bubble">
+                        <p>Hi there. I know thinking about the future can feel like standing at the edge of a very big cliff. I'm Pathfinder. I'm not here to test you or tell you what to do. I just want to chat and see if we can make the fog clear a little bit.</p>
+                        <p>How are you feeling about things right now? It's okay to say "terrified" or "confused."</p>
+                    </div>
+                </div>
+
+                <div class="chat-input-panel">
+                    <div class="input-wrapper">
+                        <input type="text" id="userInput" placeholder="Type anything... don't worry about sounding professional." autocomplete="off">
+                        <button id="sendBtn" class="send-action-btn">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="message-counter" id="messageCounter"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="paths-view" class="app-view">
+            <div class="static-content-card" id="pathsEmptyState">
+                <div class="card-icon-wrapper circle-orange">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                </div>
+                <h2>We haven't found your paths yet</h2>
+                <p>Pathfinder needs to know you a little better before making suggestions. Keep chatting, and this page will populate with ideas tailored just for you.</p>
+                <button class="return-chat-btn" onclick="returnToChat()">Return to chat</button>
+            </div>
+            <div class="chat-layout" id="savedCareersWrapper" style="display: none;">
+                <div class="chat-feed" id="savedCareersGrid"></div>
+            </div>
+        </section>
+
+        <section id="progress-view" class="app-view">
+            <div class="static-content-card" id="progressEmptyState">
+                <div class="card-icon-wrapper circle-blue">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                </div>
+                <h2>My Progress Benchmarks</h2>
+                <p>As you process goals and review industries with the conversational companion, your metrics, milestone checkins, and exploration records will save automatically right here.</p>
+            </div>
+            <div class="career-card" id="progressCard" style="display: none; max-width: 650px; width: 100%;">
+                <div class="career-card-header">
+                    <div class="career-card-badge">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                        </svg>
+                        My Progress
+                    </div>
+                </div>
+                <div class="career-card-body">
+                    <div>
+                        <div class="career-card-label">How you've been feeling</div>
+                        <p class="career-card-text" id="progressFeeling"></p>
+                    </div>
+                    <div>
+                        <div class="career-card-label">Values & themes</div>
+                        <p class="career-card-text" id="progressValues"></p>
+                    </div>
+                    <div>
+                        <div class="career-card-label">Patterns we've noticed</div>
+                        <p class="career-card-text" id="progressPatterns"></p>
+                    </div>
+                    <div>
+                        <div class="career-card-label">Career paths explored so far</div>
+                        <p class="career-card-text" id="progressCareerPaths"></p>
+                    </div>
+                    <div class="career-card-match-box">
+                        <div class="career-card-label">A gentle next step</div>
+                        <p class="career-card-text" id="progressNextStep"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="about-view" class="app-view">
+            <div class="static-content-card">
+                <div class="card-icon-wrapper circle-purple">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                    </svg>
+                </div>
+                <h2>Why we built Pathfinder</h2>
+                <p class="about-tagline">For anyone who has ever felt paralyzed by the future.</p>
+                <div class="about-text-body">
+                    <p>You are told from a young age that you can be anything you want. It's meant to be inspiring, but somewhere along the line, it becomes a heavy burden.</p>
+                    <p><strong>The fear of failure. The weight of comparison. The pressure to "figure it out."</strong></p>
+                    <p>We noticed most career tools are incredibly clinical. Finding your path isn't a math problem. It's an emotional journey that requires vulnerability and safe introspection.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="profile-view" class="app-view">
+            <div class="profile-card">
+                <h2>Account Settings</h2>
+                <p class="profile-sub text-center">Your account profile details connected via Google Sign-In.</p>
+                
+                <div class="profile-form-grid">
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" id="profName" value="" readonly class="disabled-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <input type="email" id="profEmail" value="" readonly class="disabled-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Phone Number/Method</label>
+                        <input type="text" id="profPhone" value="" readonly class="disabled-input">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="modal-overlay" id="registerModal">
+        <div class="modal-box">
+            <h2>Unlock Unlimited Conversations</h2>
+            <p>You have reached your 10 free trial messages! Please sign in with your Google Account to save your data, access account sections, and keep talking with Pathfinder.</p>
+            
+            <div style="display: flex; justify-content: center; margin-top: 1.5rem;">
+                <button id="googleSignInBtn" class="modal-submit-btn" onclick="signInWithGoogle()">Sign in with Google</button>
+            </div>
+
+            <p style="margin: 1.25rem 0 0; font-size: 0.8rem; color: var(--text-muted);">or</p>
+
+            <div class="modal-form" style="margin-top: 0.75rem;">
+                <input type="email" id="magicLinkEmail" placeholder="you@example.com">
+                <button class="modal-submit-btn" onclick="sendMagicLink()">Email me a sign-in link</button>
+                <p id="magicLinkStatus" style="font-size: 0.8rem; color: var(--text-muted); margin: 0;"></p>
+            </div>
+        </div>
     </div>
 
-    <div id="result"></div>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyAn8jTUGAkYSQajfObE-E__YhiRhaZSCeM",
+            authDomain: "pathfinder-12c1d.firebaseapp.com",
+            projectId: "pathfinder-12c1d",
+            storageBucket: "pathfinder-12c1d.firebasestorage.app",
+            messagingSenderId: "957246545476",
+            appId: "1:957246545476:web:33ffdf867628dee401e611"
+        };
+        firebase.initializeApp(firebaseConfig);
 
-    <script src="script.js"></script>
+        let userMessagesSentCount = 0;
+        let isSending = false;
+        let isUserRegistered = false;
+
+        const CHAT_STORAGE_KEY = 'pathfinder_chat_history';
+
+        // This array matches the strict formatting your friend's backend sends right to Groq
+        let messageHistory = [
+            {
+                "role": "assistant",
+                "content": "Hi there. I know thinking about the future can feel like standing at the edge of a very big cliff. I'm Pathfinder. I'm not here to test you or tell you what to do. I just want to chat and see if we can make the fog clear a little bit. How are you feeling about things right now? It's okay to say 'terrified' or 'confused.'"
+            }
+        ];
+
+        // If a previous conversation was saved in this browser, restore it instead of the default greeting
+        let restoredFromStorage = false;
+        const storedHistory = localStorage.getItem(CHAT_STORAGE_KEY);
+        if (storedHistory) {
+            try {
+                const parsedHistory = JSON.parse(storedHistory);
+                if (Array.isArray(parsedHistory) && parsedHistory.length > 0) {
+                    messageHistory = parsedHistory;
+                    restoredFromStorage = true;
+                }
+            } catch (e) {
+                console.error("Could not restore saved conversation:", e);
+            }
+        }
+
+        function saveHistory() {
+            localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messageHistory));
+        }
+
+        // Renders one stored message back into the chat feed, choosing a chat bubble vs. a career card
+        function renderMessage(msg) {
+            if (msg.role === 'user') {
+                appendChatBubble(msg.content, 'user-bubble');
+                return;
+            }
+            // Assistant content is usually a JSON string ({"type": "question"/"suggestion", ...});
+            // the very first greeting message is plain text instead, hence the try/catch fallback
+            try {
+                const parsed = JSON.parse(msg.content);
+                if (parsed.type === 'suggestion' && Array.isArray(parsed.careers)) {
+                    parsed.careers.forEach(career => appendCareerCard(career));
+                } else {
+                    appendChatBubble(parsed.content, 'assistant-bubble');
+                }
+            } catch (e) {
+                appendChatBubble(msg.content, 'assistant-bubble');
+            }
+        }
+
+        // Triggers the Firebase Auth Google sign-in popup
+        function signInWithGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            firebase.auth().signInWithPopup(provider).catch(function (error) {
+                console.error("Google sign-in error:", error);
+            });
+        }
+
+        // Sends a passwordless sign-in link to the typed email address
+        function sendMagicLink() {
+            const email = document.getElementById('magicLinkEmail').value.trim();
+            const statusEl = document.getElementById('magicLinkStatus');
+            if (!email) return;
+
+            const actionCodeSettings = {
+                url: window.location.href,
+                handleCodeInApp: true
+            };
+
+            firebase.auth().sendSignInLinkToEmail(email, actionCodeSettings)
+                .then(function () {
+                    localStorage.setItem('pathfinder_email_for_signin', email);
+                    statusEl.textContent = "Check your email for a sign-in link!";
+                })
+                .catch(function (error) {
+                    console.error("Magic link error:", error);
+                    if (error.code === 'auth/quota-exceeded') {
+                        statusEl.textContent = "Email sign-in has hit its daily limit. Please use Google sign-in for now.";
+                    } else {
+                        statusEl.textContent = "Could not send the link. Please try again.";
+                    }
+                });
+        }
+
+        // If this page load is the result of clicking the magic link from an email, complete the sign-in
+        if (firebase.auth().isSignInWithEmailLink(window.location.href)) {
+            let emailForSignIn = localStorage.getItem('pathfinder_email_for_signin');
+            if (!emailForSignIn) {
+                emailForSignIn = window.prompt('Please confirm the email you used to request the link:');
+            }
+            firebase.auth().signInWithEmailLink(emailForSignIn, window.location.href)
+                .then(function () {
+                    localStorage.removeItem('pathfinder_email_for_signin');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                })
+                .catch(function (error) {
+                    console.error("Email link sign-in error:", error);
+                });
+        }
+
+        // Fires whenever Firebase's sign-in state changes (sign-in, sign-out, or page reload with an existing session)
+        firebase.auth().onAuthStateChanged(function (user) {
+            if (user) {
+                document.getElementById('profName').value = user.displayName || '';
+                document.getElementById('profEmail').value = user.email || '';
+                document.getElementById('profPhone').value = "Google Authentication Profile";
+                document.getElementById('navUserName').innerText = user.displayName ? user.displayName.split(' ')[0] : 'Guest';
+
+                isUserRegistered = true;
+                document.getElementById('registerModal').classList.remove('modal-active');
+                updateCounterUI();
+            } else {
+                isUserRegistered = false;
+                document.getElementById('navUserName').innerText = "Guest";
+                document.getElementById('profName').value = '';
+                document.getElementById('profEmail').value = '';
+                document.getElementById('profPhone').value = '';
+            }
+        });
+
+        // Handles sending message arrays to your friend's exact local Flask server API setup
+       async function handleMessageSending() {
+    // Guard against a second send firing while one is still in flight (career
+    // suggestions take noticeably longer to generate than a plain question,
+    // so without this a quick double-click/double-Enter creates two overlapping
+    // requests and two loader bubbles with the same id, which breaks cleanup)
+    if (isSending) return;
+
+    const textInput = document.getElementById('userInput');
+    const userText = textInput.value.trim();
+    if (!userText) return;
+
+    // Enforce the 10-message account wall block
+    if (userMessagesSentCount >= 10 && !isUserRegistered) {
+        document.getElementById('registerModal').classList.add('modal-active');
+        return;
+    }
+
+    isSending = true;
+    document.getElementById('sendBtn').disabled = true;
+
+    // Push your user message to the local history tracker
+    messageHistory.push({ "role": "user", "content": userText });
+    appendChatBubble(userText, 'user-bubble');
+    textInput.value = '';
+
+    userMessagesSentCount++;
+    updateCounterUI();
+
+    const chatWindow = document.getElementById('chatWindow');
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    // 1. CREATE THE BOUNCING TYPING LOADER BUBBLE RIGHT HERE
+    const typingIndicator = document.createElement('div');
+    typingIndicator.className = 'typing-bubble assistant-bubble';
+    typingIndicator.id = 'aiTypingLoader';
+    typingIndicator.innerHTML = `
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+    `;
+    chatWindow.appendChild(typingIndicator);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    // Trigger registration modal if they just hit the threshold limit
+    if (userMessagesSentCount >= 10 && !isUserRegistered) {
+        typingIndicator.remove(); // Don't let the loader float behind the wall
+        document.getElementById('registerModal').classList.add('modal-active');
+        isSending = false;
+        document.getElementById('sendBtn').disabled = false;
+        return;
+    }
+
+    try {
+        // Attach the Firebase ID token if signed in, so the backend can identify the user
+        const headers = { 'Content-Type': 'application/json' };
+        const currentUser = firebase.auth().currentUser;
+        if (currentUser) {
+            const idToken = await currentUser.getIdToken();
+            headers['Authorization'] = `Bearer ${idToken}`;
+        }
+
+        // This points directly to your local Flask server
+        const response = await fetch('http://127.0.0.1:5001/career-advice', {
+            method: 'POST',
+            headers: headers,
+            // Wraps your history array in the "messages" object the backend expects
+            body: JSON.stringify({ messages: messageHistory })
+        });
+
+        const data = await response.json();
+
+        // 2. DISMISS THE TYPING ANIMATION BUBBLE IMMEDIATELY ONCE DATA ARRIVES
+        const loader = document.getElementById('aiTypingLoader');
+        if (loader) loader.remove();
+
+        // The backend returns a clean {"error": "..."} with a non-200 status when the AI call itself fails
+        // (e.g. rate limit, outage) - show that message instead of crashing into the generic catch below
+        if (!response.ok) {
+            appendChatBubble(data.error || "Something went wrong on the server. Please try again.", 'assistant-bubble');
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+            return;
+        }
+
+        // The backend returns: {"messages": messages} -> we save it over ours
+        messageHistory = data.messages;
+        saveHistory();
+
+        // latest_reply has two possible shapes: {type:"question", content} while discovering,
+        // or {type:"suggestion", careers:[...]} once the AI is ready to suggest careers
+        const latestReply = data.latest_reply;
+
+        if (latestReply.type === "suggestion") {
+            latestReply.careers.forEach(career => {
+                appendCareerCard(career);
+            });
+        } else {
+            appendChatBubble(latestReply.content, 'assistant-bubble');
+        }
+
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    } catch (err) {
+        console.error("Connection error to Flask:", err);
+        
+        // 3. WIPE LOADER CLEAR IF SERVER CRASHES SO IT DOESN'T GET STUCK BOUNCING
+        const loader = document.getElementById('aiTypingLoader');
+        if (loader) loader.remove();
+
+        appendChatBubble("Could not connect to the backend server. Make sure the Python app is running in your VS Code terminal!", 'assistant-bubble');
+    } finally {
+        // Always re-enable sending, whether the request succeeded, returned a clean error, or threw
+        isSending = false;
+        document.getElementById('sendBtn').disabled = false;
+    }
+}
+
+        function appendChatBubble(text, sideClass) {
+            const container = document.getElementById('chatWindow');
+            const element = document.createElement('div');
+            element.className = `chat-bubble ${sideClass}`;
+            element.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+            container.appendChild(element);
+        }
+
+        function appendCareerCard(career, container, alreadySaved, removeOnUnsave, onCardRemoved, showDetailsButton) {
+            container = container || document.getElementById('chatWindow');
+            const card = document.createElement('div');
+            card.className = 'career-card';
+
+            card.innerHTML = `
+                <div class="career-card-header">
+                    <div class="career-card-badge">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="7" width="20" height="14" rx="2"></rect>
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                        </svg>
+                        Career Suggestion
+                    </div>
+                    <button class="career-star-btn" title="Save this career">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+                <div class="career-card-body">
+                    <h3 class="career-card-title"></h3>
+                    <div>
+                        <div class="career-card-label">Description</div>
+                        <p class="career-card-text career-card-description"></p>
+                    </div>
+                    <div class="career-card-match-box">
+                        <div class="career-card-label">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                            </svg>
+                            Why it matches you
+                        </div>
+                        <p class="career-card-text career-card-why"></p>
+                    </div>
+                    <div class="career-card-meta-row">
+                        <div class="career-card-meta-icon">$</div>
+                        <div>
+                            <div class="career-card-label">Salary range</div>
+                            <p class="career-card-text career-card-salary"></p>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="career-card-label">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18h6"></path><path d="M10 22h4"></path>
+                                <path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"></path>
+                            </svg>
+                            Try it out
+                        </div>
+                        <p class="career-card-text career-card-tryout"></p>
+                    </div>
+                </div>
+            `;
+
+            // Fill in AI-generated text via textContent (not innerHTML) so it can never be interpreted as markup
+            card.querySelector('.career-card-title').textContent = career.title || '';
+            card.querySelector('.career-card-description').textContent = career.description || '';
+            card.querySelector('.career-card-why').textContent = career.why_it_matches_you || '';
+            card.querySelector('.career-card-salary').textContent = career.salary_range || '';
+            card.querySelector('.career-card-tryout').textContent = career.try_it_out || '';
+
+            // Tracks the saved row's database id so the star can toggle save <-> unsave.
+            // removeOnUnsave is true only on the Paths page, where unsaving should drop the
+            // whole card; in chat it should just flip the star back to empty.
+            const starBtn = card.querySelector('.career-star-btn');
+            let savedId = alreadySaved ? career.id : null;
+
+            function updateStarVisual() {
+                if (savedId) {
+                    starBtn.classList.add('saved');
+                    starBtn.title = 'Remove from Saved Paths';
+                } else {
+                    starBtn.classList.remove('saved');
+                    starBtn.title = 'Save this career';
+                }
+            }
+            updateStarVisual();
+
+            starBtn.addEventListener('click', async function () {
+                if (savedId) {
+                    const removedId = savedId;
+                    const ok = await unsaveCareerRequest(removedId);
+                    if (ok) {
+                        savedId = null;
+                        updateStarVisual();
+                        if (removeOnUnsave) {
+                            card.remove();
+                            if (typeof onCardRemoved === 'function') onCardRemoved();
+                        }
+                    }
+                } else {
+                    const newId = await saveCareerRequest(career);
+                    if (newId) {
+                        savedId = newId;
+                        updateStarVisual();
+                    }
+                }
+            });
+
+            if (showDetailsButton) {
+                const detailsBtn = document.createElement('button');
+                detailsBtn.className = 'career-details-btn';
+                detailsBtn.textContent = 'View full details';
+
+                const detailsBox = document.createElement('div');
+                detailsBox.className = 'career-details-box';
+                detailsBox.style.display = 'none';
+
+                detailsBtn.addEventListener('click', async function () {
+                    const isHidden = detailsBox.style.display === 'none';
+                    if (!isHidden) {
+                        detailsBox.style.display = 'none';
+                        detailsBtn.textContent = 'View full details';
+                        return;
+                    }
+
+                    if (!detailsBox.dataset.loaded) {
+                        detailsBtn.textContent = 'Loading...';
+                        const details = await fetchCareerDetails(career);
+                        if (details) {
+                            detailsBox.innerHTML = `
+                                <div>
+                                    <div class="career-card-label">Education needed</div>
+                                    <p class="career-card-text career-detail-education"></p>
+                                </div>
+                                <div>
+                                    <div class="career-card-label">Skills to gain</div>
+                                    <p class="career-card-text career-detail-skills"></p>
+                                </div>
+                                <div>
+                                    <div class="career-card-label">University programs</div>
+                                    <p class="career-card-text career-detail-programs"></p>
+                                </div>
+                                <div>
+                                    <div class="career-card-label">Extracurriculars</div>
+                                    <p class="career-card-text career-detail-extracurriculars"></p>
+                                </div>
+                            `;
+                            detailsBox.querySelector('.career-detail-education').textContent = details.education_needed || '';
+                            detailsBox.querySelector('.career-detail-skills').textContent = (details.skills_to_gain || []).join(', ');
+                            detailsBox.querySelector('.career-detail-programs').textContent = (details.university_programs || []).join(', ');
+                            detailsBox.querySelector('.career-detail-extracurriculars').textContent = (details.extracurriculars || []).join(', ');
+                            detailsBox.dataset.loaded = 'true';
+                        } else {
+                            detailsBox.textContent = 'Could not load details right now, please try again.';
+                        }
+                    }
+
+                    detailsBtn.textContent = 'Hide full details';
+                    detailsBox.style.display = 'flex';
+                });
+
+                card.querySelector('.career-card-body').appendChild(detailsBtn);
+                card.querySelector('.career-card-body').appendChild(detailsBox);
+            }
+
+            container.appendChild(card);
+        }
+
+        async function fetchCareerDetails(career) {
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) return null;
+
+            try {
+                const idToken = await currentUser.getIdToken();
+                const response = await fetch('http://127.0.0.1:5001/career-details', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({ title: career.title, description: career.description })
+                });
+                if (!response.ok) return null;
+                const data = await response.json();
+                return data.details;
+            } catch (err) {
+                console.error("Could not load career details:", err);
+                return null;
+            }
+        }
+
+        async function saveCareerRequest(career) {
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) {
+                document.getElementById('registerModal').classList.add('modal-active');
+                return null;
+            }
+
+            try {
+                const idToken = await currentUser.getIdToken();
+                const response = await fetch('http://127.0.0.1:5001/save-career', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify(career)
+                });
+                if (!response.ok) return null;
+                const data = await response.json();
+                return data.id;
+            } catch (err) {
+                console.error("Could not save career:", err);
+                return null;
+            }
+        }
+
+        async function unsaveCareerRequest(careerId) {
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) return false;
+
+            try {
+                const idToken = await currentUser.getIdToken();
+                const response = await fetch(`http://127.0.0.1:5001/save-career/${careerId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+                return response.ok;
+            } catch (err) {
+                console.error("Could not remove saved career:", err);
+                return false;
+            }
+        }
+
+        // Replace the default greeting with the restored conversation, now that the render functions above exist
+        if (restoredFromStorage) {
+            document.getElementById('chatWindow').innerHTML = '';
+            messageHistory.forEach(renderMessage);
+        }
+
+        function openPathsView(targetBtn) {
+            switchView('paths-view', targetBtn);
+            loadSavedCareers();
+        }
+
+        function openProgressView(targetBtn) {
+            switchView('progress-view', targetBtn);
+            loadProgress();
+        }
+
+        async function loadProgress() {
+            const emptyState = document.getElementById('progressEmptyState');
+            const card = document.getElementById('progressCard');
+
+            const currentUser = firebase.auth().currentUser;
+            // Need both a signed-in user and an actual conversation to analyze
+            if (!currentUser || messageHistory.length <= 1) {
+                emptyState.style.display = 'flex';
+                card.style.display = 'none';
+                return;
+            }
+
+            try {
+                const idToken = await currentUser.getIdToken();
+                const response = await fetch('http://127.0.0.1:5001/progress', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({ messages: messageHistory })
+                });
+
+                if (!response.ok) {
+                    emptyState.style.display = 'flex';
+                    card.style.display = 'none';
+                    return;
+                }
+
+                const data = await response.json();
+                const progress = data.progress;
+
+                document.getElementById('progressFeeling').textContent = progress.feeling || '';
+                document.getElementById('progressValues').textContent = (progress.values || []).join(', ');
+                document.getElementById('progressPatterns').textContent = (progress.patterns || []).join(', ');
+                document.getElementById('progressCareerPaths').textContent = (progress.career_paths_explored || []).join(', ');
+                document.getElementById('progressNextStep').textContent = progress.next_step || '';
+
+                emptyState.style.display = 'none';
+                card.style.display = 'flex';
+            } catch (err) {
+                console.error("Could not load progress:", err);
+            }
+        }
+
+        async function loadSavedCareers() {
+            const emptyState = document.getElementById('pathsEmptyState');
+            const wrapper = document.getElementById('savedCareersWrapper');
+            const grid = document.getElementById('savedCareersGrid');
+
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) {
+                emptyState.style.display = 'flex';
+                wrapper.style.display = 'none';
+                return;
+            }
+
+            try {
+                const idToken = await currentUser.getIdToken();
+                const response = await fetch('http://127.0.0.1:5001/saved-careers', {
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+                const data = await response.json();
+                const savedCareers = data.saved_careers || [];
+
+                if (savedCareers.length === 0) {
+                    emptyState.style.display = 'flex';
+                    wrapper.style.display = 'none';
+                    return;
+                }
+
+                grid.innerHTML = '';
+                savedCareers.forEach(career => appendCareerCard(career, grid, true, true, () => {
+                    // If that was the last saved card, fall back to the empty state
+                    if (grid.children.length === 0) {
+                        emptyState.style.display = 'flex';
+                        wrapper.style.display = 'none';
+                    }
+                }, true));
+                emptyState.style.display = 'none';
+                wrapper.style.display = 'flex';
+            } catch (err) {
+                console.error("Could not load saved careers:", err);
+            }
+        }
+
+        function startJourney() {
+            document.getElementById('landing-view').classList.remove('active-view');
+            document.getElementById('talk-view').classList.add('active-view');
+            document.getElementById('mainNav').style.display = 'flex';
+            document.getElementById('authGroup').style.display = 'flex';
+            updateCounterUI();
+        }
+
+        function showLandingPage() {
+            const views = document.querySelectorAll('.app-view');
+            views.forEach(v => v.classList.remove('active-view'));
+            document.getElementById('landing-view').classList.add('active-view');
+        }
+
+        function switchView(viewId, targetBtn) {
+            const views = document.querySelectorAll('.app-view');
+            views.forEach(v => v.classList.remove('active-view'));
+            
+            const navButtons = document.querySelectorAll('.nav-btn, .nav-profile-btn');
+            navButtons.forEach(b => b.classList.remove('active'));
+
+            document.getElementById(viewId).classList.add('active-view');
+            if (targetBtn) targetBtn.classList.add('active');
+        }
+
+        function openProfileOrSignIn(targetBtn) {
+            if (isUserRegistered) {
+                switchView('profile-view', targetBtn);
+            } else {
+                document.getElementById('registerModal').classList.add('modal-active');
+            }
+        }
+
+        function returnToChat() {
+            const talkBtn = document.querySelector('.nav-btn');
+            switchView('talk-view', talkBtn);
+        }
+
+        function updateCounterUI() {
+            const counterElement = document.getElementById('messageCounter');
+            if (isUserRegistered) {
+                counterElement.innerText = "Premium Access Enabled";
+                return;
+            }
+            let remaining = 10 - userMessagesSentCount;
+            if (remaining < 0) remaining = 0;
+            counterElement.innerText = `Free messages remaining: ${remaining}`;
+        }
+
+        function signOut() {
+            firebase.auth().signOut(); // onAuthStateChanged listener handles clearing the profile fields/nav
+
+            userMessagesSentCount = 0;
+
+            document.getElementById('mainNav').style.display = 'none';
+            document.getElementById('authGroup').style.display = 'none';
+            
+            // Force return to dashboard view layout
+            const views = document.querySelectorAll('.app-view');
+            views.forEach(v => v.classList.remove('active-view'));
+            document.getElementById('landing-view').classList.add('active-view');
+        }
+
+        document.getElementById('sendBtn').addEventListener('click', handleMessageSending);
+        document.getElementById('userInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleMessageSending();
+        });
+    </script>
 </body>
 </html>
